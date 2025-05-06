@@ -1,0 +1,63 @@
+sequenceDiagram
+    participant AT as Adding Thread(s)
+    participant AMTQ as AddMessageToSendQueue Function
+    participant M as Mutex (send_queue_mutex_)
+    participant Q as Message Queue (send_queue_)
+    participant CV as Condition Variable (send_queue_cv_)
+    participant ST as Send Thread (Client::SendMessages)
+    participant S as Network Socket
+    participant SV as Server
+
+    Note over AT: Needs to send a Message
+    AT->>AMTQ: Call AddMessageToSendQueue(message)
+
+    activate AMTQ
+    AMTQ->>M: Acquire Lock
+    activate M
+    M-->>AMTQ: Lock Acquired
+
+    AMTQ->>Q: Push Message(message)
+    activate Q
+    Q-->>AMTQ: Message Pushed
+    deactivate Q
+
+    AMTQ->>CV: Notify One
+    activate CV
+    CV-->>AMTQ: Notification Sent
+
+    AMTQ->>M: Release Lock
+    deactivate M
+    deactivate AMTQ
+
+    Note over ST: Waiting for messages
+
+    ST->>M: Acquire Lock (in loop)
+    activate M
+    alt Queue is Empty
+        M-->>ST: Lock Acquired
+        ST->>CV: Wait (releases Mutex)
+        deactivate M
+        Note over ST: Thread is blocked
+        CV-->>ST: Notification Received (from AMTQ)
+        activate M
+        ST->>M: Re-acquire Lock
+        Note over ST: Thread is unblocked
+    end
+
+    M-->>ST: Lock Acquired (Queue not empty)
+
+    ST->>Q: Pop Message
+    activate Q
+    Q-->>ST: Message Popped
+    deactivate Q
+
+    ST->>M: Release Lock
+    deactivate M
+
+    ST->>S: Call Send(message)
+    activate S
+    S-->>ST: Send Result
+
+    S->>SV: Message Data
+
+    Note over ST: Continues loop (back to acquire mutex)

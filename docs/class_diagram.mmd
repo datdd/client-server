@@ -1,0 +1,128 @@
+classDiagram
+    direction LR
+
+    %% Interfaces
+    class ISocket {
+        <<interface>>
+        +Connect(string, int) bool
+        +Bind(string, int) bool
+        +Listen(int) bool
+        +Accept() ISocket*
+        +Send(void*, size_t) int
+        +Receive(void*, size_t) int
+        +Close() void
+        +IsValid() const bool
+    }
+
+    class IMessageHandler {
+        <<interface>>
+        +HandleMessage(string, IClientHandler*, Server*) bool
+    }
+
+    class IClientHandler {
+        <<interface>>
+        +Start() void
+        +Stop() void
+        +SendMessage(string) bool
+        +GetClientId() const int
+        +GetSocket() const ISocket*
+    }
+
+    %% Concrete Implementations
+    class PosixSocket {
+        -int socket_fd_
+        +PosixSocket(int)
+        +Connect(string, int) bool
+        +Bind(string, int) bool
+        +Listen(int) bool
+        +Accept() ISocket*
+        +Send(void*, size_t) int
+        +Receive(void*, size_t) int
+        +Close() void
+        +IsValid() const bool
+    }
+
+    class WinsockSocket {
+        -SOCKET socket_fd_
+        +WinsockSocket(SOCKET)
+        +Connect(string, int) bool
+        +Bind(string, int) bool
+        +Listen(int) bool
+        +Accept() ISocket*
+        +Send(void*, size_t) int
+        +Receive(void*, size_t) int
+        +Close() void
+        +IsValid() const bool
+    }
+
+    class BroadcastMessageHandler {
+        +BroadcastMessageHandler()
+        +HandleMessage(string, IClientHandler*, Server*) bool
+    }
+
+    class ClientHandler {
+        -int client_id_
+        -unique_ptr<ISocket> client_socket_
+        -Server* server_
+        -IMessageHandler* message_handler_
+        -thread handler_thread_
+        -atomic<bool> running_
+        +ClientHandler(int, unique_ptr<ISocket>, Server*, IMessageHandler*)
+        +Start() void
+        +Stop() void
+        +SendMessage(string) bool
+        +GetClientId() const int
+        +GetSocket() const ISocket*
+        -Run() void
+    }
+
+    %% Main Classes
+    class Server {
+        -int port_
+        -unique_ptr<ISocket> server_socket_
+        -vector<unique_ptr<IClientHandler>> clients_
+        -mutex clients_mutex_
+        -unique_ptr<IMessageHandler> message_handler_
+        -atomic<bool> running_
+        -int next_client_id_
+        +Server(int, unique_ptr<ISocket>, unique_ptr<IMessageHandler>)
+        +Start() bool
+        +Stop() void
+        +AcceptConnections() void
+        +BroadcastMessage(string, IClientHandler*) void
+        +RemoveClient(IClientHandler*) void
+    }
+
+    class Client {
+        -string server_address_
+        -int server_port_
+        -unique_ptr<ISocket> server_socket_
+        -thread receive_thread_
+        -atomic<bool> receiving_
+        +Client(string, int)
+        +Connect() bool
+        +Disconnect() void
+        +SendMessage(string) bool
+        +StartReceiveThread() void
+        +StopReceiveThread() void
+        -ReceiveMessages() void
+    }
+
+    %% Relationships
+    PosixSocket --|> ISocket : implements
+    WinsockSocket --|> ISocket : implements
+    BroadcastMessageHandler --|> IMessageHandler : implements
+    ClientHandler --|> IClientHandler : implements
+
+    Server --o ISocket : uses (server_socket_)
+    Server --o IMessageHandler : uses (message_handler_)
+    Server --* IClientHandler : manages (clients_)
+
+    ClientHandler --o ISocket : uses (client_socket_)
+    ClientHandler --> Server : interacts with
+    ClientHandler --> IMessageHandler : uses
+
+    IMessageHandler --> Server : calls methods on
+    IMessageHandler --> IClientHandler : calls methods on
+
+    Client --o ISocket : uses (server_socket_)
